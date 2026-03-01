@@ -89,10 +89,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // 2. 尝试注入 Content Script
         try {
-            // 先获取标签页信息，检查是否为飞书页面
+            // 先获取标签页信息，检查是否为飞书/Lark页面
             const tab = await chrome.tabs.get(tabId);
-            if (!tab.url || !tab.url.includes('feishu.cn/base/')) {
-                console.log('Not a Feishu Bitable page, skipping script injection');
+            const feishuDomains = ['feishu.cn', 'larksuite.com', 'larkoffice.com', 'lark.cn'];
+            const feishuPaths = ['/base/', '/wiki/', '/docx/', '/sheets/'];
+
+            const isFeishuPage = tab.url && feishuDomains.some(domain => tab.url.includes(domain)) &&
+                feishuPaths.some(path => tab.url.includes(path));
+
+            if (!isFeishuPage) {
+                console.log('Not a Feishu/Lark Bitable page, skipping script injection');
                 return false;
             }
 
@@ -304,7 +310,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!tabId) return;
         try {
             const response = await chrome.tabs.sendMessage(tabId, { action: 'GET_TITLE' });
-            if (chrome.runtime.lastError) { 
+            if (chrome.runtime.lastError) {
                 // 忽略连接错误，这是正常的，特别是当内容脚本还未加载时
                 console.log('[Sidepanel] Could not fetch title (content script not ready)');
                 return;
