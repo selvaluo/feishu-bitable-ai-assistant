@@ -16,7 +16,9 @@ function injectScript() {
 injectScript();
 
 // 同步状态标记 - 只有在同步过程中才处理拦截到的 Blob
-let isSyncing = false;
+if (typeof isSyncing === 'undefined') {
+    var isSyncing = false;
+}
 
 // 2. 监听来自拦截脚本的消息
 window.addEventListener('message', function (event) {

@@ -57,19 +57,28 @@ const BaseFileParser = {
      * 从快照中构建表名和字段名的映射表
      */
     buildNameRegistry: function (snapshot) {
+        console.log('开始构建名称映射，快照长度:', snapshot.length);
+        
         const tableMap = {};  // {tableId: tableName}
         const fieldMap = {};  // {tableId_fieldId: fieldName}
         const allTables = []; // [{table object}, ...]
 
+        let processedItems = 0;
+        let processedTables = 0;
+        let processedFields = 0;
+
         for (const item of snapshot) {
+            processedItems++;
             if (!item.schema) continue;
 
             const schema = item.schema;
 
             // 从 tableMap 获取表名
-            for (const [tid, tinfo] of Object.entries(schema.tableMap || {})) {
-                if (tinfo && tinfo.name) {
-                    tableMap[tid] = tinfo.name;
+            if (schema.tableMap) {
+                for (const [tid, tinfo] of Object.entries(schema.tableMap)) {
+                    if (tinfo && tinfo.name) {
+                        tableMap[tid] = tinfo.name;
+                    }
                 }
             }
 
@@ -81,6 +90,7 @@ const BaseFileParser = {
             if (data.table) tables.push(data.table);
 
             for (const table of tables) {
+                processedTables++;
                 if (!table || typeof table !== 'object') continue;
 
                 allTables.push(table);
@@ -95,12 +105,21 @@ const BaseFileParser = {
                 // 提取字段名
                 if (tableId && table.fieldMap) {
                     for (const [fieldId, fieldDef] of Object.entries(table.fieldMap)) {
+                        processedFields++;
                         const fieldName = fieldDef.name || fieldId;
                         fieldMap[`${tableId}_${fieldId}`] = fieldName;
                     }
                 }
             }
         }
+
+        console.log('名称映射构建完成:', 
+            '处理项目数:', processedItems, 
+            '处理表数:', processedTables, 
+            '处理字段数:', processedFields, 
+            '最终表数:', Object.keys(tableMap).length, 
+            '最终字段数:', Object.keys(fieldMap).length
+        );
 
         return { tableMap, fieldMap, allTables };
     },
@@ -221,8 +240,12 @@ const BaseFileParser = {
         const config = customData.fieldConfigValue || {};
         const formData = config.formData || {};
 
-        // 提取提示词
+        // 提取提示词 - 确保是字符串类型
         let promptText = formData.promptEdit || formData.content || formData.custom_rules || "";
+        // 确保 promptText 是字符串
+        if (typeof promptText !== 'string') {
+            promptText = "";
+        }
 
         // 提取来源字段
         let sourceField = "";
@@ -509,22 +532,36 @@ const BaseFileParser = {
      * 主入口：解析 .base 文件内容 (兼容旧版 Markdown 输出)
      */
     parseBaseFile: function (fileContent) {
-        // ... (Keep existing implementation logic but reuse struct?)
-        // For safety, keep existing code exactly as is for now to avoid breaking view
         try {
+            console.log('开始解析文件，大小:', (fileContent.length / 1024).toFixed(1), 'KB');
+            
+            // 检查文件大小
+            if (fileContent.length > 10 * 1024 * 1024) { // 10MB
+                console.warn('文件较大，可能需要较长时间解析');
+            }
+
+            // 解析 JSON
+            console.log('解析 JSON 数据...');
             const data = JSON.parse(fileContent);
 
             // 1. 解压快照
+            console.log('解压快照数据...');
             const snapshot = this.decompressContent(data.gzipSnapshot);
             if (!snapshot) {
+                console.error('快照解压失败');
                 return { success: false, error: "快照解压失败" };
             }
+            console.log('快照解压成功，包含', snapshot.length, '个项目');
 
             // 2. 构建名称映射
+            console.log('构建名称映射...');
             const { tableMap, fieldMap, allTables } = this.buildNameRegistry(snapshot);
+            console.log('名称映射构建完成，', Object.keys(tableMap).length, '张表，', Object.keys(fieldMap).length, '个字段');
 
             // 3. 生成文档
+            console.log('生成字段表 Markdown...');
             const fieldTableMd = this.generateFieldTable(allTables, tableMap, fieldMap);
+            console.log('字段表生成完成，长度:', fieldTableMd.length, '字符');
 
             return {
                 success: true, // 保持 success 字段
@@ -541,7 +578,15 @@ const BaseFileParser = {
                 }
             };
         } catch (e) {
-            return { success: false, error: e.message };
+            console.error('解析失败:', e);
+            // 提供更详细的错误信息
+            let errorMsg = e.message;
+            if (e instanceof SyntaxError) {
+                errorMsg = `JSON解析错误: ${e.message}`;
+            } else if (e instanceof RangeError) {
+                errorMsg = `内存不足: ${e.message}`;
+            }
+            return { success: false, error: errorMsg };
         }
     }
 };

@@ -84,11 +84,18 @@ document.addEventListener('DOMContentLoaded', () => {
             return true;
         } catch (e) {
             // PING 失败，尝试注入脚本
-            console.log('PING failed, trying to inject script...', e);
+            console.log('PING failed, trying to inject script...', e.message);
         }
 
         // 2. 尝试注入 Content Script
         try {
+            // 先获取标签页信息，检查是否为飞书页面
+            const tab = await chrome.tabs.get(tabId);
+            if (!tab.url || !tab.url.includes('feishu.cn/base/')) {
+                console.log('Not a Feishu Bitable page, skipping script injection');
+                return false;
+            }
+
             await chrome.scripting.executeScript({
                 target: { tabId: tabId },
                 files: ['content.js']
@@ -100,7 +107,8 @@ document.addEventListener('DOMContentLoaded', () => {
             await chrome.tabs.sendMessage(tabId, { action: 'PING' });
             return true;
         } catch (e) {
-            console.error('Connection check failed completely:', e);
+            console.log('Connection check failed (expected on non-Feishu pages):', e.message);
+            // 不显示错误，这是正常的，当页面不是飞书页面或权限不足时会发生
             return false;
         }
     }
@@ -296,7 +304,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!tabId) return;
         try {
             const response = await chrome.tabs.sendMessage(tabId, { action: 'GET_TITLE' });
-            if (chrome.runtime.lastError) { /* ignore */ }
+            if (chrome.runtime.lastError) { 
+                // 忽略连接错误，这是正常的，特别是当内容脚本还未加载时
+                console.log('[Sidepanel] Could not fetch title (content script not ready)');
+                return;
+            }
             if (response && response.title) {
                 console.log(`[Sidepanel] Fetched live title: ${response.title}`);
 
@@ -314,7 +326,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
         } catch (e) {
-            console.error('Fetch title failed:', e);
+            console.log('Fetch title failed (content script not connected):', e.message);
+            // 不显示错误，这是正常的，当内容脚本未加载时会发生
         }
     }
 
@@ -595,17 +608,38 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function handleFileUpload(file) {
-        addLog(`📤 开始读取文件: ${file.name}`);
-        statusEl.textContent = '解析中...';
+        addLog(`📤 开始读取文件: ${file.name}, 大小: ${(file.size / 1024).toFixed(1)} KB`);
+        statusEl.textContent = '读取中...';
+
+        // 检查文件大小
+        if (file.size > 5 * 1024 * 1024) { // 5MB
+            addLog('⚠️ 文件较大，可能需要较长时间解析');
+        }
 
         const reader = new FileReader();
         reader.onload = function (e) {
             const content = e.target.result;
+            addLog(`📦 文件读取完成，内容长度: ${(content.length / 1024).toFixed(1)} KB`);
+            statusEl.textContent = '解析中...';
             processFileContent(content, file.name);
         };
         reader.onerror = function () {
             addLog('❌ 文件读取失败');
+            statusEl.textContent = '读取失败';
+            statusEl.className = 'status-badge status-disconnected';
         };
+        // 为大型文件设置超时
+        const timeoutId = setTimeout(() => {
+            reader.abort();
+            addLog('❌ 文件读取超时');
+            statusEl.textContent = '读取超时';
+            statusEl.className = 'status-badge status-disconnected';
+        }, 30000); // 30秒超时
+
+        reader.onloadend = function () {
+            clearTimeout(timeoutId);
+        };
+
         reader.readAsText(file);
     }
 

@@ -388,6 +388,43 @@ ${getDocPlaceholder(documents.relationGraph)}
         const timeoutId = setTimeout(() => controller.abort(), 10000);
 
         try {
+            // 获取模型，优先使用缓存的模型列表，否则使用默认模型
+            let model;
+            const models = await this.getAvailableModels();
+            if (models.length > 0) {
+                model = models[0].id;
+            } else {
+                // 为不同提供商设置合理的默认模型
+                switch (provider) {
+                    case 'openai':
+                        model = 'gpt-4o-mini';
+                        break;
+                    case 'deepseek':
+                        model = 'deepseek-chat';
+                        break;
+                    case 'siliconflow':
+                        model = 'deepseek-ai/DeepSeek-V3';
+                        break;
+                    case 'volcengine':
+                        model = 'ep-20240510171746-xqxzh';
+                        break;
+                    case 'kimi':
+                        model = 'moonshot-v1-8k';
+                        break;
+                    case 'qwen':
+                        model = 'qwen-plus';
+                        break;
+                    case 'google':
+                        model = 'gemini-1.5-flash';
+                        break;
+                    case 'anthropic':
+                        model = 'claude-3-sonnet-20240229';
+                        break;
+                    default:
+                        model = 'gpt-4o-mini';
+                }
+            }
+
             const response = await fetch(endpoint, {
                 method: 'POST',
                 headers: {
@@ -395,7 +432,7 @@ ${getDocPlaceholder(documents.relationGraph)}
                     'Authorization': `Bearer ${key}`
                 },
                 body: JSON.stringify({
-                    model: provider === 'openai' ? 'gpt-4o-mini' : 'hi',
+                    model: model,
                     messages: [{ role: 'user', content: 'Hi' }],
                     max_tokens: 5
                 }),
